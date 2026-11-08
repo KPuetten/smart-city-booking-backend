@@ -42,6 +42,8 @@ const {
   hasTicketPosition,
   paymentRequestSteps,
   provisionFailureNotice,
+  admissionSteps,
+  ADMISSION_INVALIDATION,
 } = require("./booking-lifecycle");
 const {
   CancellationRefundService,
@@ -112,6 +114,7 @@ function createGroupBookingLifecycle(adapters) {
     payment,
     mail,
     workflow,
+    admission = null,
     clock = Date.now,
   } = adapters;
 
@@ -173,6 +176,22 @@ function createGroupBookingLifecycle(adapters) {
         "access",
         op,
         () => access[op](booking.tenantId, booking.id),
+        { bookingId: booking.id, when: () => when(booking) },
+      ),
+    );
+  }
+
+  /**
+   * The admission step of every member that books a tariff with admissions
+   * (`admissionSteps`): none for the others, so their pipeline stays.
+   */
+  function admissionEach(bookings, op, args, when = () => true) {
+    return bookings.flatMap((booking) =>
+      admissionSteps(
+        admission,
+        booking,
+        op,
+        () => admission[op](booking.tenantId, booking, ...args),
         { bookingId: booking.id, when: () => when(booking) },
       ),
     );
@@ -270,6 +289,7 @@ function createGroupBookingLifecycle(adapters) {
     return runPipeline(ctxOf(transition, tenantId, group, bookings), [
       ...accessEach(bookings, "hold"),
       ...accessEach(bookings, "provision", confirmed),
+      ...admissionEach(bookings, "issue", [], confirmed),
       step(
         PHASE.DOCUMENT,
         "documents",
@@ -352,6 +372,7 @@ function createGroupBookingLifecycle(adapters) {
     return runPipeline(ctxOf(transition, tenantId, group, bookings), [
       ...saveEach(bookings, from, transition),
       ...accessEach(bookings, "provision", confirmed),
+      ...admissionEach(bookings, "issue", [], confirmed),
       ...emitEach(bookings, WORKFLOW_EVENT.COMMIT, trigger),
       notice("FREE_BOOKING_CONFIRMATION", {}, { when: allConfirmed }),
       ...paymentRequestSteps(
@@ -411,6 +432,7 @@ function createGroupBookingLifecycle(adapters) {
     return runPipeline(ctxOf(transition, tenantId, group, bookings), [
       ...saveEach(bookings, from, transition),
       ...accessEach(bookings, "provision"),
+      ...admissionEach(bookings, "issue", []),
       step(
         PHASE.DOCUMENT,
         "documents",
@@ -496,6 +518,7 @@ function createGroupBookingLifecycle(adapters) {
     return runPipeline(ctxOf(transition, tenantId, group, bookings), [
       ...saveEach(bookings, from, transition),
       ...accessEach(bookings, "revoke"),
+      ...admissionEach(bookings, "invalidate", [ADMISSION_INVALIDATION.CANCEL]),
       step(
         PHASE.DOCUMENT,
         "documents",
@@ -612,6 +635,7 @@ function createGroupBookingLifecycle(adapters) {
       ),
       ...accessEach(members, "hold", (booking) => !confirmed(booking)),
       ...accessEach(members, "provision", confirmed),
+      ...admissionEach(members, "issue", [], confirmed),
       provisionFailureNotice(notice),
     ]);
   }

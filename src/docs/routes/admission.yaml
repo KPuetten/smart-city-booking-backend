@@ -1,0 +1,452 @@
+# swagger/routes/admission.yaml
+
+/api/{tenant}/admission/check:
+  post:
+    tags:
+      - Admission
+    summary: Check an admission in at the device's facility
+    description: |
+      One scan at the entrance, decided in the fixed order of
+      `docs/admission.md` (code, validity, usage, presence, block time,
+      capacity). A refused check is answered `200` with `result: denied`,
+      its `reason`, `step` and a German `message`; only a granted check
+      changes the admission. Every check is logged.
+
+      Authorized by the token of an admission device, not by a session;
+      the device checks at its own facility only and is limited to
+      `RATE_LIMIT_ADMISSION_CHECK_PER_DEVICE` checks a minute.
+    security:
+      - admissionDeviceToken: []
+    parameters:
+      - $ref: "#/components/parameters/TenantParam"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AdmissionCheckRequest"
+    responses:
+      "200":
+        description: The decision
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionCheckAnswer"
+      "400":
+        description: A request id that is no text of up to 128 characters (`admission_request_id_invalid`)
+      "401":
+        description: No token, a made-up or renewed one, or one of another tenant (`admission_device_unauthorized`)
+      "403":
+        description: The device is blocked (`admission_device_blocked`)
+      "409":
+        description: The request id was sent before for another admission (`admission_request_id_reused`)
+      "429":
+        description: Past the device's rate limit, with `Retry-After`
+      "503":
+        description: |
+          No `ADMISSION_CODE_SECRET` configured (`admission_code_secret_missing`),
+          or the same request id is still being decided after two seconds
+          (`admission_request_in_progress`, with `Retry-After`), or every
+          attempt to write the check met the write of another device
+          (`admission_check_contended`, with `Retry-After`, logged)
+
+/api/{tenant}/admission/exit:
+  post:
+    tags:
+      - Admission
+    summary: Check an admission out at the device's facility
+    description: |
+      The exit scan: only where the facility scans exits (`exit_disabled`
+      otherwise), only of an admission checked in (`not_present`). Same
+      authorization, logging and answers as the entry.
+    security:
+      - admissionDeviceToken: []
+    parameters:
+      - $ref: "#/components/parameters/TenantParam"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AdmissionCheckRequest"
+    responses:
+      "200":
+        description: The decision
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionCheckAnswer"
+      "401":
+        description: Device not authenticated
+      "403":
+        description: Device blocked
+      "429":
+        description: Rate limit
+
+/api/{tenant}/admission/device:
+  get:
+    tags:
+      - Admission
+    summary: What the device shows besides the scan
+    description: |
+      The device, the number of admissions checked in at its facility and
+      its last ten checks (the answers they got).
+    security:
+      - admissionDeviceToken: []
+    parameters:
+      - $ref: "#/components/parameters/TenantParam"
+    responses:
+      "200":
+        description: The device status
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/AdmissionCheckedIn"
+                - type: object
+                  properties:
+                    device:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        label: { type: string }
+                        facilityId: { type: string }
+                    recentChecks:
+                      type: array
+                      items:
+                        $ref: "#/components/schemas/AdmissionCheckAnswer"
+      "401":
+        description: Device not authenticated
+
+/api/{tenant}/admission/facilities/{facilityId}/check:
+  post:
+    tags:
+      - Admission
+    summary: Check an admission in or out, as a member of staff
+    description: |
+      The check of the check view, signed in. Requires `admission.check`
+      (`manageAdmissions.create`), the whole right of the entrance staff:
+      no bookings, users, tariffs or payments. Limited to
+      `RATE_LIMIT_ADMISSION_CHECK_PER_USER` checks a minute.
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/TenantParam"
+      - $ref: "#/components/parameters/AdmissionFacilityParam"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AdmissionStaffCheckRequest"
+    responses:
+      "200":
+        description: The decision
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionCheckAnswer"
+      "401":
+        description: Not authenticated
+      "403":
+        description: Without `admission.check`
+      "404":
+        description: No facility with admission settings (`admission_facility_not_found`)
+      "429":
+        description: Rate limit
+
+/api/{tenant}/admission/facilities/{facilityId}/checked-in:
+  get:
+    tags:
+      - Admission
+    summary: The number of admissions checked in at a facility
+    description: |
+      Derived from the states of the admissions. Checked-in admissions, not
+      people present. Requires `admission.check`.
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/TenantParam"
+      - $ref: "#/components/parameters/AdmissionFacilityParam"
+    responses:
+      "200":
+        description: The count
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionCheckedIn"
+      "404":
+        description: No facility with admission settings
+
+/api/{tenant}/admission/facilities/{facilityId}/checks:
+  get:
+    tags:
+      - Admission
+    summary: The latest checks at a facility, newest first
+    description: Requires `admission.check`. At most `limit` (default 20, up to 200).
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/TenantParam"
+      - $ref: "#/components/parameters/AdmissionFacilityParam"
+      - name: limit
+        in: query
+        schema: { type: integer }
+    responses:
+      "200":
+        description: The checks with the answers they got
+
+/api/{tenant}/admission/facilities/{facilityId}/reset-runs:
+  get:
+    tags:
+      - Admission
+    summary: The runs of the daily reset of a facility, newest first
+    description: |
+      For the monitoring of the reset: trigger (`schedule`, `catchUp`),
+      owner, status, counts, error. Requires `admission.read`.
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/TenantParam"
+      - $ref: "#/components/parameters/AdmissionFacilityParam"
+      - name: limit
+        in: query
+        schema: { type: integer }
+    responses:
+      "200":
+        description: The runs
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/AdmissionResetRun"
+
+/api/{tenant}/admission/admissions:
+  get:
+    tags:
+      - Admission
+    summary: The admissions of the tenant, newest first
+    description: Requires `admission.read` (`manageAdmissions.readAny`).
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/TenantParam"
+      - { name: facilityId, in: query, schema: { type: string } }
+      - { name: bookableId, in: query, schema: { type: string } }
+      - { name: bookingId, in: query, schema: { type: string } }
+      - name: state
+        in: query
+        schema:
+          $ref: "#/components/schemas/AdmissionState"
+      - name: code
+        in: query
+        description: >-
+          The code of an admission, as printed or scanned (spaces, hyphens and
+          lower case accepted). A code that is malformed or not signed for the
+          tenant finds no admission.
+        schema: { type: string }
+      - { name: limit, in: query, schema: { type: integer } }
+    responses:
+      "200":
+        description: The admissions with their usage logs, without codes
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/Admission"
+
+/api/{tenant}/admission/admissions/{id}:
+  get:
+    tags:
+      - Admission
+    summary: One admission with its usage log and its code
+    description: Requires `admission.read`.
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/TenantParam"
+      - { name: id, in: path, required: true, schema: { type: string } }
+    responses:
+      "200":
+        description: The admission
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Admission"
+      "404":
+        description: "`admission_not_found`"
+
+/api/{tenant}/admission/admissions/{id}/corrections:
+  post:
+    tags:
+      - Admission
+    summary: A correction of the administration
+    description: |
+      `block`, `unblock`, `resetPresence` (a forgotten exit) or
+      `revertEntry` (takes the last entry back and gives its day of use
+      back), with the account and the reason in the usage log. Requires
+      `admission.correct` (`manageAdmissions.updateAny`).
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/TenantParam"
+      - { name: id, in: path, required: true, schema: { type: string } }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [action, reason]
+            properties:
+              action:
+                type: string
+                enum: [block, unblock, resetPresence, revertEntry]
+              reason:
+                type: string
+    responses:
+      "200":
+        description: The admission as corrected
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Admission"
+      "400":
+        description: "`reason_required`, `admission_correction_unknown`"
+      "404":
+        description: "`admission_not_found`"
+      "409":
+        description: |
+          `admission_correction_not_applicable` for the admission as it is,
+          `admission_changed` where a scan wrote it in between
+
+/api/{tenant}/admission/devices:
+  get:
+    tags:
+      - Admission
+    summary: The admission devices of the tenant
+    description: Requires `admissionDevice.read`. Never the token or its hash.
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/TenantParam"
+      - { name: facilityId, in: query, schema: { type: string } }
+    responses:
+      "200":
+        description: The devices
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/AdmissionDevice"
+  post:
+    tags:
+      - Admission
+    summary: Register an admission device at a facility
+    description: |
+      The answer carries the device's token, this once. Requires
+      `admissionDevice.manage` (the tenant owner).
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/TenantParam"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [facilityId, label]
+            properties:
+              facilityId: { type: string }
+              label: { type: string, maxLength: 100, example: "Eingang Nord" }
+    responses:
+      "201":
+        description: The device and its token
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionDeviceWithToken"
+      "400":
+        description: "`admission_device_label_required`"
+      "404":
+        description: "`admission_facility_not_found`"
+
+/api/{tenant}/admission/devices/{id}/token:
+  post:
+    tags:
+      - Admission
+    summary: Renew the token of a device
+    description: The old token stops working at once. Requires `admissionDevice.manage`.
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/TenantParam"
+      - { name: id, in: path, required: true, schema: { type: string } }
+    responses:
+      "200":
+        description: The device and its new token
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionDeviceWithToken"
+      "404":
+        description: "`admission_device_not_found`"
+
+/api/{tenant}/admission/devices/{id}/block:
+  post:
+    tags:
+      - Admission
+    summary: Block a device
+    description: Its token is refused until it is unblocked. Requires `admissionDevice.manage`.
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/TenantParam"
+      - { name: id, in: path, required: true, schema: { type: string } }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [reason]
+            properties:
+              reason: { type: string }
+    responses:
+      "200":
+        description: The device
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionDevice"
+      "400":
+        description: "`reason_required`"
+      "404":
+        description: "`admission_device_not_found`"
+
+/api/{tenant}/admission/devices/{id}/unblock:
+  post:
+    tags:
+      - Admission
+    summary: Unblock a device
+    description: Requires `admissionDevice.manage`.
+    security:
+      - bearerAuth: []
+    parameters:
+      - $ref: "#/components/parameters/TenantParam"
+      - { name: id, in: path, required: true, schema: { type: string } }
+    responses:
+      "200":
+        description: The device
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdmissionDevice"
+      "404":
+        description: "`admission_device_not_found`"
+      "409":
+        description: "`admission_device_not_blocked`"

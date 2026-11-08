@@ -10,6 +10,9 @@ const {
   validateBlockPeriods,
   validateBookingModeExclusivity,
 } = require("../../utilities/block-period-validation");
+const {
+  validateAdmissionFields,
+} = require("../admission/admission-definition");
 
 const BOOKABLE_TYPES = Object.freeze({
   EVENT_LOCATION: "event-location",
@@ -536,6 +539,7 @@ class Bookable {
 
     validateBookingModeExclusivity(this);
     validateBlockPeriods(this);
+    validateAdmissionFields(this);
 
     return true;
   }

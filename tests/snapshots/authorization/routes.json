@@ -2311,6 +2311,126 @@
     "instanceOwner": 200,
     "expiredToken": 401
   },
+  "POST /api/:tenant/admission/check": {
+    "anonymous": 401,
+    "signedIn": 401,
+    "roleHolder": 401,
+    "tenantOwner": 401,
+    "instanceOwner": 401,
+    "expiredToken": 401
+  },
+  "POST /api/:tenant/admission/exit": {
+    "anonymous": 401,
+    "signedIn": 401,
+    "roleHolder": 401,
+    "tenantOwner": 401,
+    "instanceOwner": 401,
+    "expiredToken": 401
+  },
+  "GET /api/:tenant/admission/device": {
+    "anonymous": 401,
+    "signedIn": 401,
+    "roleHolder": 401,
+    "tenantOwner": 401,
+    "instanceOwner": 401,
+    "expiredToken": 401
+  },
+  "POST /api/:tenant/admission/facilities/:facilityId/check": {
+    "anonymous": 401,
+    "signedIn": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "roleHolder": 404,
+    "tenantOwner": 404,
+    "instanceOwner": 404,
+    "expiredToken": 401
+  },
+  "GET /api/:tenant/admission/facilities/:facilityId/checked-in": {
+    "anonymous": 401,
+    "signedIn": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "roleHolder": 404,
+    "tenantOwner": 404,
+    "instanceOwner": 404,
+    "expiredToken": 401
+  },
+  "GET /api/:tenant/admission/facilities/:facilityId/checks": {
+    "anonymous": 401,
+    "signedIn": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "roleHolder": 200,
+    "tenantOwner": 200,
+    "instanceOwner": 200,
+    "expiredToken": 401
+  },
+  "GET /api/:tenant/admission/facilities/:facilityId/reset-runs": {
+    "anonymous": 401,
+    "signedIn": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "roleHolder": 200,
+    "tenantOwner": 200,
+    "instanceOwner": 200,
+    "expiredToken": 401
+  },
+  "GET /api/:tenant/admission/admissions": {
+    "anonymous": 401,
+    "signedIn": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "roleHolder": 200,
+    "tenantOwner": 200,
+    "instanceOwner": 200,
+    "expiredToken": 401
+  },
+  "GET /api/:tenant/admission/admissions/:id": {
+    "anonymous": 401,
+    "signedIn": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "roleHolder": 200,
+    "tenantOwner": 200,
+    "instanceOwner": 200,
+    "expiredToken": 401
+  },
+  "POST /api/:tenant/admission/admissions/:id/corrections": {
+    "anonymous": 401,
+    "signedIn": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "roleHolder": 400,
+    "tenantOwner": 400,
+    "instanceOwner": 400,
+    "expiredToken": 401
+  },
+  "GET /api/:tenant/admission/devices": {
+    "anonymous": 401,
+    "signedIn": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "roleHolder": 200,
+    "tenantOwner": 200,
+    "instanceOwner": 200,
+    "expiredToken": 401
+  },
+  "POST /api/:tenant/admission/devices": {
+    "anonymous": 401,
+    "signedIn": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "roleHolder": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "tenantOwner": 400,
+    "instanceOwner": 400,
+    "expiredToken": 401
+  },
+  "POST /api/:tenant/admission/devices/:id/token": {
+    "anonymous": 401,
+    "signedIn": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "roleHolder": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "tenantOwner": 200,
+    "instanceOwner": 200,
+    "expiredToken": 401
+  },
+  "POST /api/:tenant/admission/devices/:id/block": {
+    "anonymous": 401,
+    "signedIn": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "roleHolder": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "tenantOwner": 400,
+    "instanceOwner": 400,
+    "expiredToken": 401
+  },
+  "POST /api/:tenant/admission/devices/:id/unblock": {
+    "anonymous": 401,
+    "signedIn": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "roleHolder": "403 {\"error\":\"ForbiddenError\",\"code\":\"forbidden\",\"statusCode\":403,\"params\":{}}",
+    "tenantOwner": 409,
+    "instanceOwner": 409,
+    "expiredToken": 401
+  },
   "GET /api/:tenant/ical/events": {
     "anonymous": 200,
     "signedIn": 200,

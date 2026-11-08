@@ -1,6 +1,6 @@
 /**
- * The rate limits of the public entry points (spec §6.3) and of the geo
- * services (map ECCdigital/tickets#372), with their
+ * The rate limits of the public entry points (spec §6.3), of the geo
+ * services (map ECCdigital/tickets#372) and of the admission checks, with their
  * defaults and the environment variables that override them. Each limit is
  * read at call time, so a changed environment counts at once. Every limit
  * has its own key even when two of them guard the same subject: the limiter
@@ -131,6 +131,25 @@ function geoTilesOutbound() {
   };
 }
 
+/**
+ * Checks of an admission device at the entrance: 120 per minute,
+ * two a second - more than a person at a scanner manages.
+ */
+function admissionCheckPerDevice(deviceId) {
+  return {
+    key: `admission-check:device:${normalizeSubject(deviceId)}`,
+    ...limitFrom("RATE_LIMIT_ADMISSION_CHECK_PER_DEVICE", 120, 60),
+  };
+}
+
+/** Checks of a member of staff in the check view: 120 per minute. */
+function admissionCheckPerUser(userId) {
+  return {
+    key: `admission-check:user:${normalizeSubject(userId)}`,
+    ...limitFrom("RATE_LIMIT_ADMISSION_CHECK_PER_USER", 120, 60),
+  };
+}
+
 module.exports = {
   signupPerIp,
   verificationMailPerAccount,
@@ -141,5 +160,7 @@ module.exports = {
   geoPerUser,
   geoOutbound,
   geoTilesOutbound,
+  admissionCheckPerDevice,
+  admissionCheckPerUser,
   positiveInt,
 };

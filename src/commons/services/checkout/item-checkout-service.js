@@ -938,6 +938,7 @@ class ItemCheckoutService {
     return runTimeInPastCheck({
       originBookable: this.originBookable,
       timeBegin: this.timeBegin,
+      timeEnd: this.timeEnd,
     });
   }
 

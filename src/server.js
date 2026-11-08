@@ -15,6 +15,7 @@ const {
 } = require("./commons/utilities/migration-state");
 const seed = require("../seeder/seeder");
 const RuleEngine = require("./rule-engine/ruleEngine");
+const AdmissionResetJob = require("./commons/services/admission/admission-reset-job");
 const { requestLogger } = require("./middleware/logger.js");
 const lazyBrowser = require("./commons/pdf-service/LazyBrowser");
 const { errorHandler } = require("./middleware/error-handler");
@@ -179,6 +180,9 @@ dbm.connect().then(() => {
       if (process.env.RULE_ENGINE_ENABLED === "true") {
         await RuleEngine.initEngine();
       }
+      // The daily reset of the admissions is not optional: it runs
+      // whatever RULE_ENGINE_ENABLED says, and makes up a missed reset now.
+      await AdmissionResetJob.start();
     } catch (err) {
       logger.error("Error during application initialization steps", err);
       if (migrationState.get() !== MIGRATION_STATES.SUCCEEDED) {
@@ -199,6 +203,8 @@ async function gracefulShutdown(signal) {
   }, 30000);
 
   try {
+    AdmissionResetJob.stop();
+
     if (server) {
       await new Promise((resolve) => {
         server.close(() => {

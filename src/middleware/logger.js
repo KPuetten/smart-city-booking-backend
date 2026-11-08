@@ -28,6 +28,29 @@ const UNLOGGED_QUERY = /\/geo(\/|$)/;
 const TILE_PATH = /(\/geo\/tiles)(\/[^?]*)?/;
 
 /**
+ * The fields that are credentials, never logged: an admission's code admits
+ * whoever holds it, in the body of a check as in the query of the
+ * administration's search (`?code=`).
+ */
+const REDACTED_BODY_FIELDS = ["password", "token", "code"];
+const REDACTED_QUERY_FIELDS = ["code"];
+const REDACTED_QUERY = /([?&]code=)[^&#]*/g;
+
+/** The fields named replaced, the rest as it is. */
+function redacted(fields, names) {
+  if (!fields || typeof fields !== "object") return fields;
+  const copy = { ...fields };
+  for (const name of names) {
+    if (copy[name]) copy[name] = "[REDACTED]";
+  }
+  return copy;
+}
+
+/** A URL with the value of a query field of `REDACTED_QUERY` replaced. */
+const withoutCode = (url) =>
+  typeof url === "string" ? url.replace(REDACTED_QUERY, "$1[REDACTED]") : url;
+
+/**
  * Request logging middleware that logs all incoming requests in development mode.
  * Logs method, URL, query parameters, body, and headers; the URL of a geo
  * route without its query, and that of a tile without its coordinates.
@@ -45,7 +68,7 @@ function requestLogger(req, res, next) {
     const unlogged = UNLOGGED_QUERY.test(withoutQuery(req.originalUrl));
     const tile = TILE_PATH.test(withoutQuery(req.originalUrl));
     const shown = (url) => {
-      if (!unlogged) return url;
+      if (!unlogged) return withoutCode(url);
       const path = withoutQuery(url);
       return tile ? path.replace(TILE_PATH, "$1/:z/:x/:y") : path;
     };
@@ -57,7 +80,9 @@ function requestLogger(req, res, next) {
       path: tilePart(req.path),
       baseUrl: shown(req.baseUrl),
       originalUrl: shown(req.originalUrl),
-      query: unlogged ? "[REDACTED]" : req.query,
+      query: unlogged
+        ? "[REDACTED]"
+        : redacted(req.query, REDACTED_QUERY_FIELDS),
       params: tile ? "[REDACTED]" : req.params,
       headers: {
         host: req.headers.host,
@@ -72,10 +97,7 @@ function requestLogger(req, res, next) {
     // Log body only for POST, PUT, PATCH requests and if it exists
     if (["POST", "PUT", "PATCH"].includes(req.method) && req.body) {
       // Sanitize sensitive data in body
-      const sanitizedBody = { ...req.body };
-      if (sanitizedBody.password) sanitizedBody.password = "[REDACTED]";
-      if (sanitizedBody.token) sanitizedBody.token = "[REDACTED]";
-      logData.body = sanitizedBody;
+      logData.body = redacted(req.body, REDACTED_BODY_FIELDS);
     }
 
     requestLogger.info(logData, `${req.method} ${shown(req.originalUrl)}`);

@@ -16,6 +16,9 @@ const projection = require("../services/supervision/public-projection");
 const {
   REVIEW_STATUS,
 } = require("../services/supervision/supervision-constants");
+const {
+  stampFacilitySchedule,
+} = require("../entities/admission/admission-definition");
 
 /**
  * Data Manager for Bookable objects.
@@ -343,6 +346,48 @@ class BookableManager {
   }
 
   /**
+   * The facilities with admission checks (German "Einrichtung"): the
+   * bookables whose `admissionFacility` is set and not switched off, of one
+   * tenant or, without one, of every tenant - the daily reset looks for
+   * them across the instance.
+   * @param {string|null} tenantId Tenant ID, null for every tenant
+   * @param {{reach: string, userId?: string|null}} scope As of `getBookables`
+   * @returns {Promise<Bookable[]>}
+   */
+  static async getAdmissionFacilities(tenantId, scope) {
+    const rawBookables = await BookableModel.find({
+      ...(tenantId ? { tenantId } : {}),
+      admissionFacility: { $type: "object" },
+      "admissionFacility.enabled": { $ne: false },
+      ...ownCondition("bookable", scope),
+    });
+    return rawBookables.map((doc) => doc.toEntity());
+  }
+
+  /**
+   * The facilities with admission checks that are a parent of one of the
+   * given tariffs: a parent lists its children in `relatedBookableIds`
+   * (see {@link BookableManager.getParentBookables}).
+   * @param {string} tenantId Tenant ID
+   * @param {string[]} tariffIds The tariffs (tickets)
+   * @param {{reach: string, userId?: string|null}} scope As of `getBookables`
+   * @returns {Promise<Bookable[]>}
+   */
+  static async getAdmissionFacilitiesOf(tenantId, tariffIds, scope) {
+    if (!tariffIds.length) {
+      return [];
+    }
+    const rawBookables = await BookableModel.find({
+      tenantId,
+      relatedBookableIds: { $in: tariffIds },
+      admissionFacility: { $type: "object" },
+      "admissionFacility.enabled": { $ne: false },
+      ...ownCondition("bookable", scope),
+    });
+    return rawBookables.map((doc) => doc.toEntity());
+  }
+
+  /**
    * Get all bookables of a tenant that expose a specific access point (by id)
    * via their active access point configuration. Several bookables may
    * reference the same access point, e.g. a main entrance shared by rooms.
@@ -443,7 +488,7 @@ class BookableManager {
 
     const existingBookable = await BookableModel.findOne(
       { id: bookableEntity.id, tenantId: bookableEntity.tenantId },
-      { customFieldDefinitions: 1 },
+      { customFieldDefinitions: 1, admissionFacility: 1 },
     ).lean();
 
     CustomFieldService.normalizeDefinitions(
@@ -451,6 +496,14 @@ class BookableManager {
     );
 
     bookableEntity.validate();
+
+    // The entity's `timeUpdated` is the time it was built, not the time of
+    // the change: the reset reads when its schedule changed from here.
+    bookableEntity.admissionFacility = stampFacilitySchedule(
+      bookableEntity.admissionFacility,
+      existingBookable?.admissionFacility,
+      Date.now(),
+    );
 
     // The review (glossary "Prüfstatus") belongs to `updateReview` alone
     // once the bookable exists: a whole-bookable write carries it on

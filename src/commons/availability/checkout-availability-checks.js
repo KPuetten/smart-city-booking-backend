@@ -4,11 +4,16 @@ const { CHECK_TYPES } = require("./checkout-check-types");
 const { CHECKOUT_REASONS } = require("../services/checkout/checkout-reasons");
 const { getBookingsForCapacityCheck } = require("./check-window-availability");
 const {
+  isValidForBookedPeriod,
+} = require("../entities/admission/admission-definition");
+const {
   isTimeRelatedBookable,
   sumBookedAmount,
   evaluateOriginCapacity,
   evaluateParentCapacity,
   evaluateChildCapacity,
+  checksParentCapacityAtBooking,
+  countsTowardsParentCapacity,
   isEventBookable,
   hasEventSeats,
   getBookingDurationHours,
@@ -228,6 +233,12 @@ async function runParentAvailabilityCheck({
   const parentAmount = [];
 
   for (const parentBookable of parentBookables) {
+    // A tariff checked at the entry or not at all is not checked against
+    // its facility, nor named among the parents' remaining places.
+    if (!checksParentCapacityAtBooking(originBookable, parentBookable)) {
+      continue;
+    }
+
     const { amountBooked: parentAmountBooked, bookings } =
       await getBookedAmountForBookableWindow(
         provider,
@@ -251,6 +262,15 @@ async function runParentAvailabilityCheck({
       );
 
       for (const childBookable of childBookables) {
+        if (
+          !countsTowardsParentCapacity(
+            childBookable,
+            originBookable,
+            parentBookable,
+          )
+        ) {
+          continue;
+        }
         const { amountBooked, bookings: childBookings } =
           await getBookedAmountForBookableWindow(
             provider,
@@ -578,19 +598,37 @@ async function runMinBookingLeadTimeCheck({ originBookable, timeBegin }) {
 /**
  * A self-booking cannot start before now (ECCdigital/tickets#188). Only a
  * bookable with a booking period has a begin to check; a ticket's date is
- * the event's (`runEventDateCheck`). The message is the reason itself: v1
- * answers the message as its body, and a client names the reason from it.
+ * the event's (`runEventDateCheck`). A tariff whose admissions are valid
+ * for the booked period may start before now, as long as the period has
+ * not ended. The message is the reason itself: v1 answers the message as
+ * its body, and a client names the reason from it.
  *
  * @param {Object} params
  * @param {number} [params.now] The current moment, for tests.
  * @returns {Object}
  */
-function runTimeInPastCheck({ originBookable, timeBegin, now = Date.now() }) {
+function runTimeInPastCheck({
+  originBookable,
+  timeBegin,
+  timeEnd,
+  now = Date.now(),
+}) {
   if (
     !isTimeRelatedBookable(originBookable) ||
     timeBegin === null ||
     timeBegin === undefined ||
     Number(timeBegin) >= now
+  ) {
+    return { checkType: CHECK_TYPES.TIME_IN_PAST, available: true };
+  }
+  // A tariff whose admissions are valid for the booked period (a day
+  // ticket) is sold while that period lasts: the day ticket of today is
+  // bought on the day, after its period began at 00:00.
+  if (
+    isValidForBookedPeriod(originBookable) &&
+    timeEnd !== null &&
+    timeEnd !== undefined &&
+    Number(timeEnd) > now
   ) {
     return { checkType: CHECK_TYPES.TIME_IN_PAST, available: true };
   }

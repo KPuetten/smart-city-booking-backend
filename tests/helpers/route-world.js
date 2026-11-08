@@ -30,6 +30,11 @@ const sinon = require("sinon");
 
 const AccessLogManager = require("../../src/commons/data-managers/access-log-manager");
 const AccessPointManager = require("../../src/commons/data-managers/access-point-manager");
+const AdmissionManager = require("../../src/commons/data-managers/admission-manager");
+const AdmissionCheckManager = require("../../src/commons/data-managers/admission-check-manager");
+const AdmissionDeviceManager = require("../../src/commons/data-managers/admission-device-manager");
+const AdmissionResetRunManager = require("../../src/commons/data-managers/admission-reset-run-manager");
+const { Admission } = require("../../src/commons/entities/admission/admission");
 const {
   BookableManager,
 } = require("../../src/commons/data-managers/bookable-manager");
@@ -427,6 +432,41 @@ function installRouteWorld({
     only: { query: async () => [] },
   });
   stubManager(AccessPointManager, { one: accessPoint });
+  // The admissions: one issued admission of the fixture booking; no device
+  // token is known, so the device routes refuse everybody alike.
+  stubManager(AdmissionManager, {
+    one: () =>
+      new Admission({
+        id: FIXTURE_ID,
+        tenantId,
+        key: "0".repeat(20),
+        bookingId: FIXTURE_ID,
+        itemIndex: 0,
+        unitIndex: 0,
+        bookableId: FIXTURE_ID,
+        facilityId: FIXTURE_ID,
+        entitlement: {
+          validFrom: 0,
+          validTo: 0,
+          usage: "single",
+          timezone: "Europe/Berlin",
+        },
+      }),
+    only: { countPresentAdmissions: async () => 0 },
+  });
+  stubManager(AdmissionCheckManager, {
+    one: () => ({}),
+    many: () => [],
+    only: {
+      getCheckByRequest: async () => null,
+      countDeniedChecks: async () => 0,
+    },
+  });
+  stubManager(AdmissionDeviceManager, {
+    one: () => ({ id: FIXTURE_ID, tenantId, facilityId: FIXTURE_ID }),
+    only: { getDeviceForAuthentication: async () => null },
+  });
+  stubManager(AdmissionResetRunManager, { one: () => ({}), many: () => [] });
   // The dependent reads of the offers answer within the reach too: the
   // embedded lists (`listed` under `public`), the read by ids (`reached`),
   // the tickets of an event.

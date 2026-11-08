@@ -7,6 +7,8 @@ const {
   evaluateOriginCapacity,
   evaluateParentCapacity,
   evaluateChildCapacity,
+  checksParentCapacityAtBooking,
+  countsTowardsParentCapacity,
   isTicketEventDateBookable,
   hasEventSeats,
   isDurationAllowed,
@@ -204,6 +206,10 @@ async function checkWindowAvailability(
   const relatedBookables = await resolve(provider.getRelatedBookables());
 
   for (const parentBookable of parentBookables) {
+    if (!checksParentCapacityAtBooking(bookable, parentBookable)) {
+      continue;
+    }
+
     const parentBookings = await getBookingsForCapacityCheck(
       provider,
       parentBookable,
@@ -224,7 +230,15 @@ async function checkWindowAvailability(
       ? await sumChildTicketBookedAmount(
           provider,
           parentBookable,
-          await resolve(provider.getRelatedBookablesFor(parentBookable.id)),
+          (
+            await resolve(provider.getRelatedBookablesFor(parentBookable.id))
+          ).filter((childBookable) =>
+            countsTowardsParentCapacity(
+              childBookable,
+              bookable,
+              parentBookable,
+            ),
+          ),
           timeBegin,
           timeEnd,
           useTimeOverlap,

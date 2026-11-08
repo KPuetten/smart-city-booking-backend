@@ -1,0 +1,267 @@
+components:
+  securitySchemes:
+    admissionDeviceToken:
+      type: http
+      scheme: bearer
+      bearerFormat: adm.<device id>.<secret>
+      description: |
+        The token of an admission device, answered once when the device is
+        registered or its token renewed. Only its SHA-256 is stored. Bound
+        to one facility; blockable and renewable by the tenant owner.
+
+  parameters:
+    AdmissionFacilityParam:
+      name: facilityId
+      in: path
+      required: true
+      description: The facility (a bookable with `admissionFacility`)
+      schema:
+        type: string
+
+  schemas:
+    AdmissionCheckRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          description: |
+            The scanned or typed code, 32 characters; spaces, hyphens and
+            lower case are accepted.
+          example: "V3P7 W43A 8FK4 41LV Q0WQ 2P7Q HK6F L0UN"
+        requestId:
+          type: string
+          maxLength: 128
+          description: |
+            The client's id of this scan. Sent again with the same id, the
+            scan is answered as the first time without a second effect,
+            also while the first is still being decided (the second waits
+            for its answer); the same id for another admission or
+            direction is `409 admission_request_id_reused`.
+
+    AdmissionStaffCheckRequest:
+      allOf:
+        - $ref: "#/components/schemas/AdmissionCheckRequest"
+        - type: object
+          properties:
+            direction:
+              type: string
+              enum: [entry, exit]
+              default: entry
+
+    AdmissionCheckAnswer:
+      type: object
+      properties:
+        result:
+          type: string
+          enum: [granted, granted_with_notice, denied]
+        direction:
+          type: string
+          enum: [entry, exit]
+        reason:
+          type: string
+          nullable: true
+          description: The refusal, null where granted
+          enum:
+            - code_malformed
+            - code_forged
+            - admission_unknown
+            - wrong_facility
+            - bundle_code
+            - admission_invalid
+            - admission_blocked
+            - not_yet_valid
+            - expired
+            - already_used
+            - quota_exhausted
+            - already_present
+            - block_time
+            - capacity_reached
+            - not_present
+            - exit_disabled
+        step:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 6
+          description: The step of the check order that refused
+        message:
+          type: string
+          description: The answer in German, for the staff at the entrance
+          example: "Sperrzeit läuft, erneuter Eintritt ab 11:00 Uhr."
+        notices:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                enum:
+                  [
+                    reentry,
+                    last_day,
+                    stay_limit_passed,
+                    recent_denials,
+                    check_photo,
+                  ]
+              message:
+                type: string
+        admission:
+          type: object
+          nullable: true
+          description: |
+            The admission the code names: what it allows and where it
+            stands, never the booking or its booker. Null for a code that
+            is none or was altered.
+          properties:
+            id: { type: string }
+            bookableTitle: { type: string }
+            kind: { type: string, enum: [single, bundle, member] }
+            memberIndex: { type: integer }
+            state: { $ref: "#/components/schemas/AdmissionState" }
+            usage: { type: string, enum: [single, unlimited, quota] }
+            remainingDays: { type: integer, nullable: true }
+            validFrom: { type: number }
+            validTo: { type: number }
+            personalized: { type: boolean }
+            lastEntryAt: { type: number, nullable: true }
+        checkedIn:
+          type: integer
+          description: Admissions checked in at the facility after this check
+        checkedAt:
+          type: number
+        replayed:
+          type: boolean
+          description: Present and true where the answer is that of a scan sent before
+
+    AdmissionState:
+      type: string
+      enum: [issued, present, absent, consumed, expired, blocked, invalid]
+
+    AdmissionCheckedIn:
+      type: object
+      properties:
+        facilityId: { type: string }
+        checkedIn:
+          type: integer
+          description: |
+            Checked-in admissions, not people present: nobody without an
+            admission, no staff, nobody who left without an exit scan before
+            the reset or the stay limit.
+        capacity: { type: integer, nullable: true }
+        counts:
+          type: string
+          enum: [checked_in_admissions]
+
+    AdmissionUsageEntry:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            [
+              issue,
+              entry,
+              exit,
+              autoExit,
+              reset,
+              expire,
+              block,
+              unblock,
+              invalidate,
+              restore,
+              correction,
+            ]
+        at: { type: number }
+        day: { type: string, nullable: true, example: "2027-07-01" }
+        dayConsumed: { type: boolean }
+        fromState: { type: string, nullable: true }
+        toState: { type: string, nullable: true }
+        deviceId: { type: string, nullable: true }
+        userId: { type: string, nullable: true }
+        reason: { type: string, nullable: true }
+        runId: { type: string, nullable: true }
+        reverts: { type: number, nullable: true }
+
+    Admission:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        bookingId: { type: string }
+        bookableId: { type: string }
+        bookableTitle: { type: string }
+        facilityId: { type: string, nullable: true }
+        kind: { type: string, enum: [single, bundle, member] }
+        bundleId: { type: string, nullable: true }
+        memberIndex: { type: integer }
+        entitlement:
+          type: object
+          properties:
+            validFrom: { type: number }
+            validTo: { type: number }
+            usage: { type: string, enum: [single, unlimited, quota] }
+            quota: { type: integer, nullable: true }
+            blockMinutes: { type: integer }
+            personalized: { type: boolean }
+            capacityCheck: { type: string, enum: [booking, entry, none] }
+            timezone: { type: string }
+        state: { $ref: "#/components/schemas/AdmissionState" }
+        remainingDays: { type: integer, nullable: true }
+        usedDays:
+          type: array
+          items: { type: string }
+        entryCount: { type: integer }
+        lastEntryAt: { type: number, nullable: true }
+        lastExitAt: { type: number, nullable: true }
+        usage:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdmissionUsageEntry"
+        code:
+          type: string
+          description: The code in groups of four; only in the single read
+        timeCreated: { type: number }
+        timeUpdated: { type: number }
+
+    AdmissionDevice:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        facilityId: { type: string }
+        label: { type: string }
+        tokenHint:
+          type: string
+          description: The last four characters of the token
+        status: { type: string, enum: [active, blocked] }
+        blockReason: { type: string, nullable: true }
+        lastSeenAt: { type: number, nullable: true }
+        tokenRenewedAt: { type: number, nullable: true }
+        createdBy: { type: string, nullable: true }
+        updatedBy: { type: string, nullable: true }
+
+    AdmissionDeviceWithToken:
+      type: object
+      properties:
+        device:
+          $ref: "#/components/schemas/AdmissionDevice"
+        token:
+          type: string
+          description: The token, shown this once
+          example: "adm.d2ddf396-3571-4b17-95f8-cd473514afa6.<secret>"
+
+    AdmissionResetRun:
+      type: object
+      properties:
+        id: { type: string }
+        facilityId: { type: string }
+        dueAt: { type: number, description: The reset time this run stands for }
+        trigger: { type: string, enum: [schedule, catchUp] }
+        status: { type: string, enum: [running, done, failed] }
+        owner: { type: string, description: Host and process that ran it }
+        startedAt: { type: number }
+        finishedAt: { type: number, nullable: true }
+        resetCount: { type: integer }
+        expiredCount: { type: integer }
+        error: { type: string, nullable: true }

@@ -3,6 +3,11 @@ const { Schema } = require("mongoose");
 const { customFieldDefinitionSchema } = require("./customFieldDefinition");
 const { mediaReferenceSchema } = require("./mediaSchema");
 const { reviewField } = require("./reviewSchema");
+const {
+  VALIDITY_MODES,
+  USAGE_MODES,
+  CAPACITY_CHECKS,
+} = require("../entities/admission/admission-definition");
 
 const priceCategorySchemaDefinition = {
   priceEur: { type: Number, required: true },
@@ -99,6 +104,69 @@ const serviceHoursSchemaDefinition = {
     match: /^([01]\d|2[0-3]):[0-5]\d$/,
   },
 };
+
+// The admission definition of a ticket (German "Berechtigungsdefinition",
+// `entities/admission/admission-definition.js`): copied into every admission
+// the ticket issues, so a later change of the tariff changes none of them.
+const admissionDefinitionSchema = new Schema(
+  {
+    enabled: { type: Boolean, default: true },
+    validity: {
+      type: new Schema(
+        {
+          mode: {
+            type: String,
+            enum: Object.values(VALIDITY_MODES),
+            default: VALIDITY_MODES.BOOKING,
+          },
+          from: { type: String, default: null },
+          to: { type: String, default: null },
+          days: { type: Number, default: null },
+        },
+        { _id: false },
+      ),
+      default: () => ({}),
+    },
+    usage: {
+      type: new Schema(
+        {
+          mode: {
+            type: String,
+            enum: Object.values(USAGE_MODES),
+            default: USAGE_MODES.SINGLE,
+          },
+          quota: { type: Number, default: null },
+        },
+        { _id: false },
+      ),
+      default: () => ({}),
+    },
+    blockMinutes: { type: Number, default: 0, min: 0 },
+    personalized: { type: Boolean, default: false },
+    admissionsPerUnit: { type: Number, default: 1, min: 1 },
+    capacityCheck: {
+      type: String,
+      enum: Object.values(CAPACITY_CHECKS),
+      default: CAPACITY_CHECKS.BOOKING,
+    },
+  },
+  { _id: false },
+);
+
+// The settings of a facility whose tickets are checked at its entrance.
+const admissionFacilitySchema = new Schema(
+  {
+    enabled: { type: Boolean, default: true },
+    resetTime: { type: String, default: "03:00" },
+    exitScan: { type: Boolean, default: true },
+    maxStayMinutes: { type: Number, default: null },
+    timezone: { type: String, default: "Europe/Berlin" },
+    // When the schedule of the daily reset last changed (epoch ms), set on
+    // the write (`stampFacilitySchedule`), never taken from a client.
+    scheduleChangedAt: { type: Number, default: null },
+  },
+  { _id: false },
+);
 
 const bookableSchemaDefinition = {
   id: { type: String, required: true, unique: true },
@@ -294,6 +362,12 @@ const bookableSchemaDefinition = {
     }),
   },
   requiredFields: { type: [String], default: ["address", "zipCode", "city"] },
+
+  // Admission (German "Zugangsberechtigung"): the definition a ticket
+  // issues its admissions from, and the settings of a facility its tickets
+  // are checked at. Both stay unset on every other bookable.
+  admission: { type: admissionDefinitionSchema, default: undefined },
+  admissionFacility: { type: admissionFacilitySchema, default: undefined },
 
   externalProviders: {
     type: [

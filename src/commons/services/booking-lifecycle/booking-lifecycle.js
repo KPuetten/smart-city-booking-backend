@@ -1,8 +1,9 @@
 /**
  * The booking lifecycle (glossary "Buchungslebenszyklus"; spec part 1,
  * section 8 and part 2, section 8): the transitions of a single booking,
- * each declaring its effects as steps of the pipeline over the six adapters
- * of the seam - store, access, documents, payment, mail, workflow.
+ * each declaring its effects as steps of the pipeline over the adapters of
+ * the seam - store, access, documents, payment, mail, workflow, and
+ * admission for the bookings of tickets that issue admissions.
  *
  * `createBookingLifecycle(adapters)` builds an instance over any adapters;
  * the default instance below runs over the production adapters in
@@ -44,6 +45,9 @@ const { BOOKING_HOOK_TYPES } = require("../../entities/booking/bookingHook");
 const { isPrivateBooking } = require("../checkout/business-booking");
 const { encryptBankDetails } = require("../../utilities/bank-details");
 const { NotFoundError, ForbiddenError } = require("../../../errors/BaseError");
+const {
+  hasAdmissionPositions,
+} = require("../../entities/admission/admission-definition");
 
 const WORKFLOW_EVENT = Object.freeze({
   CREATE: "onCreate",
@@ -173,6 +177,34 @@ function provisionFailureNotice(notice) {
   );
 }
 
+/** Why the admissions of a booking go invalid, by its transition. */
+const ADMISSION_INVALIDATION = Object.freeze({
+  CANCEL: "booking_cancelled",
+  WITHDRAW: "booking_withdrawn",
+  DELETE: "booking_deleted",
+});
+
+/**
+ * The admission step of a transition (German "Zugangsberechtigung"):
+ * declared only where the lifecycle has an admission
+ * adapter and the booking books a tariff that issues admissions - every
+ * other booking runs the pipeline it ran before, step for step. It runs in
+ * the provision phase, after the access, and is recorded, never aborting.
+ *
+ * @param {Object|null} admission The admission adapter
+ * @param {Object} booking The booking of the transition
+ * @param {string} op `issue` or `invalidate`
+ * @param {function(): Promise<*>} run
+ * @param {{ when?: function(): boolean, bookingId?: string }} [options]
+ * @returns {Object[]} The step, or none
+ */
+function admissionSteps(admission, booking, op, run, options) {
+  if (!admission || !hasAdmissionPositions(booking)) {
+    return [];
+  }
+  return [step(PHASE.PROVISION, "admission", op, run, options)];
+}
+
 /**
  * @param {Object} adapters The seam (spec part 2, section 10)
  * @param {Object} adapters.store
@@ -181,6 +213,8 @@ function provisionFailureNotice(notice) {
  * @param {Object} adapters.payment
  * @param {Object} adapters.mail
  * @param {Object} adapters.workflow
+ * @param {Object} [adapters.admission] Issues and invalidates the
+ *   admissions of tickets; without it no admission step is declared
  * @param {function(): number} [adapters.clock]
  */
 function createBookingLifecycle(adapters) {
@@ -191,8 +225,25 @@ function createBookingLifecycle(adapters) {
     payment,
     mail,
     workflow,
+    admission = null,
     clock = Date.now,
   } = adapters;
+
+  /** Issues the admissions of the booking. */
+  const issueAdmissions = (tenantId, booking, when) =>
+    admissionSteps(
+      admission,
+      booking,
+      "issue",
+      () => admission.issue(tenantId, booking),
+      { when },
+    );
+
+  /** Sets the admissions of the booking invalid. */
+  const invalidateAdmissions = (tenantId, booking, reason) =>
+    admissionSteps(admission, booking, "invalidate", () =>
+      admission.invalidate(tenantId, booking, reason),
+    );
 
   /** The notices of one booking over the mail adapter. */
   function noticeOf(tenantId, bookingId) {
@@ -267,6 +318,7 @@ function createBookingLifecycle(adapters) {
         () => access.provision(tenantId, bookingId),
         { when: confirmed },
       ),
+      ...issueAdmissions(tenantId, booking, confirmed),
       step(
         PHASE.DOCUMENT,
         "documents",
@@ -355,6 +407,7 @@ function createBookingLifecycle(adapters) {
         () => access.provision(tenantId, bookingId),
         { when: confirmed },
       ),
+      ...issueAdmissions(tenantId, booking, confirmed),
       step(
         PHASE.NOTIFY,
         "workflow",
@@ -415,6 +468,7 @@ function createBookingLifecycle(adapters) {
       step(PHASE.PROVISION, "access", "provision", () =>
         access.provision(tenantId, bookingId),
       ),
+      ...issueAdmissions(tenantId, booking),
       step(
         PHASE.DOCUMENT,
         "documents",
@@ -519,6 +573,7 @@ function createBookingLifecycle(adapters) {
       step(PHASE.PROVISION, "access", "revoke", () =>
         access.revoke(tenantId, bookingId),
       ),
+      ...invalidateAdmissions(tenantId, booking, ADMISSION_INVALIDATION.CANCEL),
       step(
         PHASE.DOCUMENT,
         "documents",
@@ -683,6 +738,7 @@ function createBookingLifecycle(adapters) {
         () => access.provision(tenantId, bookingId),
         { when: confirmed },
       ),
+      ...issueAdmissions(tenantId, booking, confirmed),
       provisionFailureNotice(notice),
     ]);
   }
@@ -824,6 +880,11 @@ function createBookingLifecycle(adapters) {
       step(PHASE.PROVISION, "access", "revoke", () =>
         access.revoke(tenantId, bookingId),
       ),
+      ...invalidateAdmissions(
+        tenantId,
+        booking,
+        ADMISSION_INVALIDATION.WITHDRAW,
+      ),
       step(
         PHASE.DOCUMENT,
         "documents",
@@ -881,4 +942,6 @@ module.exports = {
   hasTicketPosition,
   paymentRequestSteps,
   provisionFailureNotice,
+  admissionSteps,
+  ADMISSION_INVALIDATION,
 };

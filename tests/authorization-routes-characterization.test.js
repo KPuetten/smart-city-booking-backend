@@ -43,6 +43,10 @@ const SNAPSHOT = "authorization/routes.json";
 const RESPONSE_TIMEOUT_MS = 2000;
 
 process.env.STORE_FRONT_URL ||= "https://store.example.test";
+// The admission checks verify the code before anything else; without a
+// secret they would answer 503 instead of the check's answer.
+process.env.ADMISSION_CODE_SECRET ||=
+  "route-characterization-secret-0123456789";
 
 /**
  * The five principals and the expired token, in the order of the table:

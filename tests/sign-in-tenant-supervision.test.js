@@ -106,6 +106,7 @@ describe("UserManager.getUserPermissions: the form of the sign-in answer", funct
     "manageCoupons",
     "manageMedia",
     "manageRoles",
+    "manageAdmissions",
   ];
   const LEVELS = [
     "create",
@@ -244,6 +245,7 @@ describe("UserManager.getUserPermissions: the form of the sign-in answer", funct
           manageBookables: group(),
           manageCoupons: group(),
           manageRoles: group(),
+          manageAdmissions: group(),
           ...FREE,
         },
         {
@@ -266,6 +268,7 @@ describe("UserManager.getUserPermissions: the form of the sign-in answer", funct
           manageCoupons: group(),
           manageMedia: group(),
           manageRoles: group(),
+          manageAdmissions: group(),
           supervisionLevel: "declined",
           supervisionChangedAt: CHANGED_AT,
           supervisionReason: "Kein Impressum",

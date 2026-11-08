@@ -66,6 +66,8 @@ const POLICY_TABLE = Object.freeze({
   "access.update": POLICY.RECORD,
   "access.revoke": POLICY.RECORD,
   "access.refreshHolds": POLICY.RECORD,
+  "admission.issue": POLICY.RECORD,
+  "admission.invalidate": POLICY.RECORD,
   "documents.issue": POLICY.RECORD,
   "payment.requestPayment": POLICY.RECORD,
   "mail.*": POLICY.RECORD,

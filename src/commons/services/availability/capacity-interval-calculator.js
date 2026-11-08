@@ -7,6 +7,8 @@ const {
 } = require("../../availability/availability-rules/capacity-rules");
 const {
   evaluateTicketParentCapacityIntervals,
+  checksParentCapacityAtBooking,
+  countsTowardsParentCapacity,
 } = require("../../availability/availability-rules/parent-child-rules");
 const {
   getBookingBufferMs,
@@ -83,6 +85,7 @@ function getUniqueBookings(bookings) {
 /**
  * @param {import("./availability-context").AvailabilityContext} context
  * @param {import("../../entities/bookable/bookable").Bookable} parentBookable
+ * @param {import("../../entities/bookable/bookable").Bookable[]} relatedBookables The children that count against the parent
  * @param {number} windowStart
  * @param {number} windowEnd
  * @param {boolean} useTimeOverlap
@@ -91,11 +94,11 @@ function getUniqueBookings(bookings) {
 function getTicketParentBookings(
   context,
   parentBookable,
+  relatedBookables,
   windowStart,
   windowEnd,
   useTimeOverlap,
 ) {
-  const relatedBookables = context.getRelatedBookablesFor(parentBookable.id);
   const bookings = [];
 
   if (useTimeOverlap) {
@@ -162,9 +165,22 @@ function computeWindowAvailability(
   );
 
   for (const parentBookable of context.parentBookables) {
+    if (!checksParentCapacityAtBooking(originBookable, parentBookable)) {
+      continue;
+    }
+
     const parentBuffer = getBookingBufferMs(parentBookable);
 
     if (originBookable.type === "ticket") {
+      const countedBookables = context
+        .getRelatedBookablesFor(parentBookable.id)
+        .filter((childBookable) =>
+          countsTowardsParentCapacity(
+            childBookable,
+            originBookable,
+            parentBookable,
+          ),
+        );
       constraintSets.push(
         evaluateTicketParentCapacityIntervals({
           windowStart,
@@ -172,12 +188,13 @@ function computeWindowAvailability(
           bookings: getTicketParentBookings(
             context,
             parentBookable,
+            countedBookables,
             windowStart,
             windowEnd,
             useTimeOverlap,
           ),
           parentBookable,
-          relatedBookables: context.getRelatedBookablesFor(parentBookable.id),
+          relatedBookables: countedBookables,
           requestedAmount: amount,
           useTimeOverlap,
           bufferBeforeMs: parentBuffer.beforeMs,

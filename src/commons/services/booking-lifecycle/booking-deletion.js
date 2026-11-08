@@ -6,21 +6,27 @@
  * removed (a document that outlived its booking would be unreachable and
  * undeletable, nobody could grant access to it), then the booking is
  * removed from the store. Every step runs; the first that throws stops
- * the deletion, the booking stands for another attempt.
+ * the deletion, the booking stands for another attempt. The admissions of
+ * a deleted booking are set invalid, not removed: they and their usage log
+ * stay the record of what was issued and used.
  *
  * `createBookingDeletion(adapters)` builds an instance over any adapters;
  * the default instance below runs over the production adapters.
  */
 
 const { NotFoundError } = require("../../../errors/BaseError");
+const {
+  hasAdmissionPositions,
+} = require("../../entities/admission/admission-definition");
 
 /**
  * @param {Object} adapters The seam (spec part 2, section 10)
  * @param {Object} adapters.store
  * @param {Object} adapters.access
  * @param {Object} adapters.documents
+ * @param {Object} [adapters.admission]
  */
-function createBookingDeletion({ store, access, documents }) {
+function createBookingDeletion({ store, access, documents, admission = null }) {
   /**
    * @param {string} tenantId
    * @param {string} bookingId
@@ -34,6 +40,9 @@ function createBookingDeletion({ store, access, documents }) {
     }
 
     await access.revoke(tenantId, bookingId);
+    if (admission && hasAdmissionPositions(booking)) {
+      await admission.invalidate(tenantId, booking, "booking_deleted");
+    }
     await documents.remove({ tenantId, booking });
     await store.remove(tenantId, bookingId);
   }

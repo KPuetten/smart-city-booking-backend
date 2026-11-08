@@ -187,6 +187,24 @@ const TABLE = {
     export: { any: "manageBookings.readAny" },
   },
 
+  // The admissions at the entrance (German "Zugangsberechtigung"). The
+  // entrance staff check with `manageAdmissions.create` alone and see
+  // nothing of bookings, users, tariffs or payments; the devices
+  // at the entrance are no principal - they carry a token of their own and
+  // use the token-authorized device routes.
+  admission: {
+    check: { any: "manageAdmissions.create" },
+    read: { any: "manageAdmissions.readAny" },
+    correct: { any: "manageAdmissions.updateAny" },
+  },
+
+  // The admission devices and their tokens: the tenant owner's, like the
+  // access applications.
+  admissionDevice: {
+    read: { any: "manageAdmissions.readAny" },
+    manage: { any: "tenantOwner" },
+  },
+
   dashboard: {
     read: { any: "manageBookings.readAny" },
   },

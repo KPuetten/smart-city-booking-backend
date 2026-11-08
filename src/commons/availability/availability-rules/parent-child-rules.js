@@ -8,6 +8,74 @@ const { CAPACITY_MODES } = require("./types");
 const {
   combineAdjacentIntervals,
 } = require("../../services/availability/availability-interval-utils");
+const {
+  CAPACITY_CHECKS,
+  normalizeDefinition,
+  normalizeFacility,
+} = require("../../entities/admission/admission-definition");
+
+/**
+ * The `capacityCheck` of a ticket's admission definition, or
+ * `null` where the bookable is no ticket or issues no admissions.
+ *
+ * @param {import("../../entities/bookable/bookable").Bookable} bookable
+ * @returns {string|null}
+ */
+function capacityCheckOf(bookable) {
+  if (bookable?.type !== "ticket") {
+    return null;
+  }
+  return normalizeDefinition(bookable.admission)?.capacityCheck ?? null;
+}
+
+/**
+ * Whether booking a child is checked against the capacity of a parent. A
+ * tariff whose admission definition checks the capacity of its facility at
+ * the entry or not at all (`capacityCheck` `entry`, `none`) is sold
+ * past the facility's `amount` - season tickets are sold over the
+ * structural capacity. Every other child, and every parent that is no
+ * facility, is checked as before. The child's own `amount` is not touched:
+ * a tariff can be sold as a contingent of its own.
+ *
+ * @param {import("../../entities/bookable/bookable").Bookable} childBookable
+ * @param {import("../../entities/bookable/bookable").Bookable} parentBookable
+ * @returns {boolean}
+ */
+function checksParentCapacityAtBooking(childBookable, parentBookable) {
+  const capacityCheck = capacityCheckOf(childBookable);
+  if (
+    capacityCheck !== CAPACITY_CHECKS.ENTRY &&
+    capacityCheck !== CAPACITY_CHECKS.NONE
+  ) {
+    return true;
+  }
+  return normalizeFacility(parentBookable?.admissionFacility) === null;
+}
+
+/**
+ * Whether the bookings of a child count against the capacity of a parent
+ * when the origin is booked. For a tariff that checks the capacity of its
+ * facility at the booking (`capacityCheck` `booking`), the tariffs checked
+ * at the entry or not at all do not count: the entrance checks the
+ * capacity for those (step 6), so 1500 season tickets of a pool of 1000
+ * leave the day tickets their 1000. Every other origin, and every parent
+ * that is no facility, counts every child as before.
+ *
+ * @param {import("../../entities/bookable/bookable").Bookable} childBookable
+ * @param {import("../../entities/bookable/bookable").Bookable} originBookable
+ * @param {import("../../entities/bookable/bookable").Bookable} parentBookable
+ * @returns {boolean}
+ */
+function countsTowardsParentCapacity(
+  childBookable,
+  originBookable,
+  parentBookable,
+) {
+  if (capacityCheckOf(originBookable) !== CAPACITY_CHECKS.BOOKING) {
+    return true;
+  }
+  return checksParentCapacityAtBooking(childBookable, parentBookable);
+}
 
 /**
  * Parent capacity: exclusive for non-ticket children, additive with child tickets for ticket children.
@@ -223,6 +291,8 @@ function evaluateParentCapacityFromBookings({
 }
 
 module.exports = {
+  checksParentCapacityAtBooking,
+  countsTowardsParentCapacity,
   evaluateParentCapacity,
   evaluateChildCapacity,
   evaluateTicketParentCapacityIntervals,
